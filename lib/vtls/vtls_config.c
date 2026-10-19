@@ -213,6 +213,7 @@ static bool clone_ssl_primary_config(struct ssl_filter_config *source,
   dest->no_partialchain = source->no_partialchain;
   dest->no_revoke = source->no_revoke;
   dest->revoke_best_effort = source->revoke_best_effort;
+  dest->ktls_direct_rx = source->ktls_direct_rx;
 
   CLONE_BLOB(cert_blob);
   CLONE_BLOB(ca_info_blob);
