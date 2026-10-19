@@ -941,9 +941,15 @@ static CURLcode ssl_cf_connect(struct Curl_cfilter *cf,
                                bool *done)
 {
   struct ssl_connect_data *connssl = cf->ctx;
+  struct ssl_filter_config *ssl_config = Curl_ssl_cf_get_filter_config(cf);
   struct cf_call_data save;
   CURLcode result;
 
+  if(ssl_config->ktls_direct_rx) {
+    data->info.ktls_direct_rx_status =
+      cf->connected ? CURL_KTLS_DIRECT_RX_ACTIVE :
+      CURL_KTLS_DIRECT_RX_REQUESTED;
+  }
   if(cf->connected && (connssl->state != ssl_connection_deferred)) {
     *done = TRUE;
     return CURLE_OK;
@@ -967,6 +973,13 @@ static CURLcode ssl_cf_connect(struct Curl_cfilter *cf,
   *done = FALSE;
 
   if(!connssl->prefs_checked) {
+    if(ssl_config->ktls_direct_rx &&
+       !(connssl->ssl_impl->supports & SSLSUPP_KTLS_DIRECT_RX)) {
+      failf(data, "selected TLS backend does not support direct RX kTLS");
+      data->info.ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_UNAVAILABLE;
+      result = CURLE_NOT_BUILT_IN;
+      goto out;
+    }
     if(!ssl_prefs_check(cf, data)) {
       result = CURLE_SSL_CONNECT_ERROR;
       goto out;

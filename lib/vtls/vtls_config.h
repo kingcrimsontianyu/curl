@@ -72,6 +72,7 @@ struct ssl_filter_config {
   BIT(no_revoke);    /* disable SSL certificate revocation checks */
   BIT(revoke_best_effort); /* ignore SSL revocation offline/missing revocation
                               list errors */
+  BIT(ktls_direct_rx); /* require direct TLS 1.3 RX kTLS (OpenSSL/Linux) */
 };
 
 struct ssl_easy_config {

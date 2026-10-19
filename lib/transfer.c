@@ -212,6 +212,94 @@ static CURLcode xfer_recv_resp(struct Curl_easy *data,
   return CURLE_OK;
 }
 
+unsigned int curl_recv_buffer_build_version_v1(void)
+{
+  return 1U;
+}
+
+static CURLcode recv_buffer_acquire(struct Curl_easy *data,
+                                    struct curl_recv_buffer *loan,
+                                    bool *again)
+{
+  curl_recv_buffer_result cbresult;
+
+  DEBUGASSERT(data->set.recv_buffer_acquire);
+  DEBUGASSERT(data->set.recv_buffer_release);
+
+  memset(loan, 0, sizeof(*loan));
+  *again = FALSE;
+  {
+    struct Curl_mapi_guard guard;
+    CURL_CBAPI_START(&guard, data, easy_recv_buffer_acquire);
+    cbresult = data->set.recv_buffer_acquire(
+      data, (size_t)data->set.buffer_size, loan,
+      data->set.recv_buffer_userdata);
+    CURL_CBAPI_END(&guard);
+  }
+
+  switch(cbresult) {
+  case CURL_RECV_BUFFER_OK:
+    return CURLE_OK;
+  case CURL_RECV_BUFFER_AGAIN:
+    *again = TRUE;
+    return CURLE_OK;
+  case CURL_RECV_BUFFER_ERROR:
+    failf(data, "receive buffer acquire callback reported an error");
+    return CURLE_ABORTED_BY_CALLBACK;
+  default:
+    failf(data, "receive buffer acquire callback returned invalid value %d",
+          (int)cbresult);
+    return CURLE_BAD_FUNCTION_ARGUMENT;
+  }
+}
+
+static void recv_buffer_release(struct Curl_easy *data,
+                                const struct curl_recv_buffer *loan,
+                                size_t used)
+{
+  DEBUGASSERT(data->set.recv_buffer_release);
+  {
+    struct Curl_mapi_guard guard;
+    CURL_CBAPI_START(&guard, data, easy_recv_buffer_release);
+    data->set.recv_buffer_release(data, loan, used,
+                                  data->set.recv_buffer_userdata);
+    CURL_CBAPI_END(&guard);
+  }
+}
+
+static CURLcode recv_buffer_validate_transfer(struct Curl_easy *data)
+{
+  struct connectdata *conn = data->conn;
+
+  if(!data->set.recv_buffer_acquire || !data->set.recv_buffer_release) {
+    failf(data, "receive buffer acquire and release callbacks must both be "
+          "set");
+    return CURLE_BAD_FUNCTION_ARGUMENT;
+  }
+
+  if(!(conn->scheme->protocol & (CURLPROTO_HTTP | CURLPROTO_HTTPS)) ||
+     data->req.httpversion_sent != 11 ||
+     Curl_conn_is_multiplex(conn, FIRSTSOCKET)) {
+    failf(data, "application receive buffers require HTTP/1.1");
+    return CURLE_UNSUPPORTED_PROTOCOL;
+  }
+
+  if((data->set.ssl.ssl_options & CURLSSLOPT_KTLS_DIRECT_RX) &&
+     !(conn->scheme->protocol & CURLPROTO_HTTPS)) {
+    failf(data, "direct RX kTLS requires origin TLS");
+    data->info.ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_UNAVAILABLE;
+    return CURLE_NOT_BUILT_IN;
+  }
+
+  if(CURL_EASY_STR(data, STRING_ENCODING) && !data->set.http_ce_skip) {
+    failf(data, "application receive buffers do not support content "
+          "decoding");
+    return CURLE_BAD_FUNCTION_ARGUMENT;
+  }
+
+  return CURLE_OK;
+}
+
 /*
  * Go ahead and do a read if we have a readable socket or if
  * the stream was rewound (in which case we have data in a
@@ -222,16 +310,49 @@ static CURLcode sendrecv_dl(struct Curl_easy *data,
 {
   struct connectdata *conn = data->conn;
   CURLcode result = CURLE_OK;
-  char *buf, *xfer_buf;
-  size_t blen, xfer_blen;
+  char *buf, *xfer_buf = NULL;
+  size_t blen, xfer_blen = 0;
+  struct curl_recv_buffer loan;
+  size_t loan_used = 0;
   int maxloops = 10;
   bool is_multiplex = FALSE;
   bool rcvd_eagain = FALSE;
   bool is_eos = FALSE, rate_limited = FALSE;
+  bool loan_acquired = FALSE;
+  bool loan_mode = !!data->set.recv_buffer_acquire ||
+                   !!data->set.recv_buffer_release;
+  bool read_again = FALSE;
 
-  result = Curl_multi_xfer_buf_borrow(data, &xfer_buf, &xfer_blen);
-  if(result)
-    goto out;
+  if(loan_mode) {
+    bool again;
+
+    result = recv_buffer_validate_transfer(data);
+    if(result)
+      goto out;
+    result = recv_buffer_acquire(data, &loan, &again);
+    if(result)
+      goto out;
+    if(again) {
+      /* No application buffer is available. Remove receive interest until
+       * the application supplies one and calls curl_easy_pause(CONT). */
+      result = Curl_xfer_pause_recv(data, TRUE);
+      goto out;
+    }
+    loan_acquired = TRUE;
+    if(!loan.buffer || !loan.length) {
+      failf(data, "receive buffer acquire callback returned an invalid "
+            "buffer");
+      result = CURLE_BAD_FUNCTION_ARGUMENT;
+      goto out;
+    }
+    xfer_buf = loan.buffer;
+    xfer_blen = loan.length;
+  }
+  else {
+    result = Curl_multi_xfer_buf_borrow(data, &xfer_buf, &xfer_blen);
+    if(result)
+      goto out;
+  }
 
   /* This is where we loop until we have read everything there is to
      read or we get a CURLE_AGAIN */
@@ -245,8 +366,9 @@ static CURLcode sendrecv_dl(struct Curl_easy *data,
       is_multiplex = Curl_conn_is_multiplex(conn, FIRSTSOCKET);
     }
 
-    buf = xfer_buf;
-    bytestoread = xfer_blen;
+    DEBUGASSERT(!loan_mode || loan_used < xfer_blen);
+    buf = loan_mode ? xfer_buf + loan_used : xfer_buf;
+    bytestoread = loan_mode ? xfer_blen - loan_used : xfer_blen;
 
     if(bytestoread && Curl_rlimit_active(&data->progress.dl.rlimit)) {
       curl_off_t dl_avail = Curl_rlimit_avail(&data->progress.dl.rlimit, NULL);
@@ -286,6 +408,9 @@ static CURLcode sendrecv_dl(struct Curl_easy *data,
     /* We only get a 0-length receive at the end of the response */
     is_eos = (blen == 0);
 
+    if(loan_mode)
+      loan_used += blen;
+
     if(!blen) {
       result = Curl_req_stop_send_recv(data);
       if(result)
@@ -308,9 +433,16 @@ static CURLcode sendrecv_dl(struct Curl_easy *data,
     if(!CURL_REQ_WANT_RECV(data))
       break;
 
+    if(loan_mode && loan_used == xfer_blen) {
+      /* Run again immediately with another application buffer. */
+      read_again = TRUE;
+      break;
+    }
+
   } while(maxloops--);
 
-  if(!is_eos && !rate_limited && CURL_REQ_WANT_RECV(data) &&
+  if((read_again || (!is_eos && !rate_limited)) &&
+     CURL_REQ_WANT_RECV(data) &&
      (!rcvd_eagain || data_pending(data, rcvd_eagain))) {
     /* Did not read until EAGAIN/EOS or there is still data pending
      * in buffers. Mark as read-again via simulated SELECT results. */
@@ -328,7 +460,10 @@ static CURLcode sendrecv_dl(struct Curl_easy *data,
   }
 
 out:
-  Curl_multi_xfer_buf_release(data, xfer_buf);
+  if(loan_acquired)
+    recv_buffer_release(data, &loan, loan_used);
+  else if(!loan_mode)
+    Curl_multi_xfer_buf_release(data, xfer_buf);
   if(result)
     DEBUGF(infof(data, "sendrecv_dl() -> %d", (int)result));
   return result;
@@ -554,6 +689,13 @@ CURLcode Curl_pretransfer(struct Curl_easy *data)
 #endif
 
     Curl_initinfo(data); /* reset session-specific information "variables" */
+    if(data->set.ssl.ssl_options & CURLSSLOPT_KTLS_DIRECT_RX)
+      data->info.ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_REQUESTED;
+#ifndef CURL_DISABLE_PROXY
+    else if(data->set.proxy_ssl.ssl_options &
+            CURLSSLOPT_KTLS_DIRECT_RX)
+      data->info.ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_REQUESTED;
+#endif
     Curl_pgrsResetTransferSizes(data);
     Curl_pgrsStart(data, NULL);
 

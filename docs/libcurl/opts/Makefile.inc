@@ -51,6 +51,7 @@ man_MANS =                                      \
   CURLINFO_HTTP_VERSION.3                       \
   CURLINFO_HTTPAUTH_AVAIL.3                     \
   CURLINFO_HTTPAUTH_USED.3                      \
+  CURLINFO_KTLS_DIRECT_RX_STATUS.3             \
   CURLINFO_LASTSOCKET.3                         \
   CURLINFO_LOCAL_IP.3                           \
   CURLINFO_LOCAL_PORT.3                         \
@@ -152,6 +153,8 @@ man_MANS =                                      \
   CURLOPT_CONNECT_TO.3                          \
   CURLOPT_CONNECTTIMEOUT.3                      \
   CURLOPT_CONNECTTIMEOUT_MS.3                   \
+  CURLOPT_CONN_REUSEDATA.3                       \
+  CURLOPT_CONN_REUSEFUNCTION.3                   \
   CURLOPT_CONV_FROM_NETWORK_FUNCTION.3          \
   CURLOPT_CONV_FROM_UTF8_FUNCTION.3             \
   CURLOPT_CONV_TO_NETWORK_FUNCTION.3            \
@@ -334,6 +337,9 @@ man_MANS =                                      \
   CURLOPT_RANGE.3                               \
   CURLOPT_READDATA.3                            \
   CURLOPT_READFUNCTION.3                        \
+  CURLOPT_RECVBUFFERDATA.3                      \
+  CURLOPT_RECVBUFFERFUNCTION.3                  \
+  CURLOPT_RECVBUFFERRELEASEFUNCTION.3           \
   CURLOPT_REDIR_PROTOCOLS.3                     \
   CURLOPT_REDIR_PROTOCOLS_STR.3                 \
   CURLOPT_REFERER.3                             \
@@ -380,6 +386,7 @@ man_MANS =                                      \
   CURLOPT_SSL_ENABLE_ALPN.3                     \
   CURLOPT_SSL_ENABLE_NPN.3                      \
   CURLOPT_SSL_FALSESTART.3                      \
+  CURLOPT_SSL_KTLS_DIRECT_RX.3                  \
   CURLOPT_SSL_OPTIONS.3                         \
   CURLOPT_SSL_SESSIONID_CACHE.3                 \
   CURLOPT_SSL_SIGNATURE_ALGORITHMS.3            \

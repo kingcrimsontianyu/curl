@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+HTTP
+CURLOPT_CONN_REUSEFUNCTION
+connection reuse
+</keywords>
+</info>
+<reply>
+<data nocheck="yes" nonewline="yes">
+HTTP/1.1 200 OK
+Content-Length: 4
+
+data
+</data>
+</reply>
+<client>
+<server>
+http
+</server>
+<name>
+Connection reuse callback: easy/multi, reset, retirement and failures
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER
+</command>
+</client>
+<verify>
+<protocol nocheck="yes">
+</protocol>
+</verify>
+</testcase>

@@ -195,6 +195,15 @@ static CURLcode cw_out_cb_write(struct Curl_easy *data,
                  blen, (otype == CW_OUT_HDS) ? "header" : "body",
                  (unsigned int)otype, nwritten);
   if(nwritten == CURL_WRITEFUNC_PAUSE) {
+    if(data->set.recv_buffer_acquire || data->set.recv_buffer_release) {
+      /* Buffering the unwritten tail would hide a copy and would let the
+       * application-owned receive buffer be released too early. Receive
+       * buffer users apply backpressure from the acquire callback instead.
+       */
+      failf(data, "CURL_WRITEFUNC_PAUSE is not supported with application "
+            "receive buffers");
+      return CURLE_WRITE_ERROR;
+    }
     if(data->conn->scheme->flags & PROTOPT_NONETWORK) {
       /* Protocols that work without network cannot be paused. This is
          actually only file:// now, and it cannot pause since the transfer is

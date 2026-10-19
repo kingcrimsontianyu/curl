@@ -69,6 +69,7 @@
 #include <openssl/ssl.h>
 
 #include "urldata.h"
+#include "openssl_ktls.h"
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #define HAVE_OPENSSL3  /* non-fork OpenSSL 3.x or later */
@@ -131,6 +132,7 @@ struct ossl_ctx {
   BIO_METHOD *bio_method;
   struct provider p;
   CURLcode io_result;       /* result of last BIO cfilter operation */
+  struct Curl_ossl_ktls_rx ktls_rx;
   /* blocked writes need to retry with same length, remember it */
   int blocked_ssl_write_len;
 #if !defined(HAVE_KEYLOG_UPSTREAM) && !defined(HAVE_KEYLOG_CALLBACK)

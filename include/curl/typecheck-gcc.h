@@ -67,6 +67,12 @@
         if((option) == CURLOPT_READFUNCTION)                            \
           if(!curlcheck_read_cb(value))                                 \
             Wcurl_easy_setopt_err_read_cb();                            \
+        if((option) == CURLOPT_RECVBUFFERFUNCTION)                      \
+          if(!curlcheck_recv_buffer_acquire_cb(value))                  \
+            Wcurl_easy_setopt_err_recv_buffer_acquire_cb();             \
+        if((option) == CURLOPT_RECVBUFFERRELEASEFUNCTION)               \
+          if(!curlcheck_recv_buffer_release_cb(value))                  \
+            Wcurl_easy_setopt_err_recv_buffer_release_cb();             \
         if((option) == CURLOPT_IOCTLFUNCTION)                           \
           if(!curlcheck_ioctl_cb(value))                                \
             Wcurl_easy_setopt_err_ioctl_cb();                           \
@@ -124,6 +130,9 @@
         if((option) == CURLOPT_PREREQFUNCTION)                          \
           if(!curlcheck_prereq_cb(value))                               \
             Wcurl_easy_setopt_err_prereq_cb();                          \
+        if((option) == CURLOPT_CONN_REUSEFUNCTION)                      \
+          if(!curlcheck_conn_reuse_cb(value))                           \
+            Wcurl_easy_setopt_err_conn_reuse_cb();                      \
         if((option) == CURLOPT_TRAILERFUNCTION)                         \
           if(!curlcheck_trailer_cb(value))                              \
             Wcurl_easy_setopt_err_trailer_cb();                         \
@@ -305,6 +314,12 @@ CURLWARNING(Wcurl_easy_setopt_err_resolver_start_callback,
             "curl_resolver_start_callback argument")
 CURLWARNING(Wcurl_easy_setopt_err_read_cb,
             "curl_easy_setopt expects a curl_read_callback argument")
+CURLWARNING(Wcurl_easy_setopt_err_recv_buffer_acquire_cb,
+            "curl_easy_setopt expects a curl_recv_buffer_acquire_callback "
+            "argument")
+CURLWARNING(Wcurl_easy_setopt_err_recv_buffer_release_cb,
+            "curl_easy_setopt expects a curl_recv_buffer_release_callback "
+            "argument")
 CURLWARNING(Wcurl_easy_setopt_err_ioctl_cb,
             "curl_easy_setopt expects a curl_ioctl_callback argument")
 CURLWARNING(Wcurl_easy_setopt_err_sockopt_cb,
@@ -347,6 +362,8 @@ CURLWARNING(Wcurl_easy_setopt_err_interleave_cb,
             "curl_easy_setopt expects a curl_interleave_callback argument")
 CURLWARNING(Wcurl_easy_setopt_err_prereq_cb,
             "curl_easy_setopt expects a curl_prereq_callback argument")
+CURLWARNING(Wcurl_easy_setopt_err_conn_reuse_cb,
+            "curl_easy_setopt expects a curl_conn_reuse_callback argument")
 CURLWARNING(Wcurl_easy_setopt_err_trailer_cb,
             "curl_easy_setopt expects a curl_trailerfunc_ok argument")
 CURLWARNING(Wcurl_easy_setopt_err_error_buffer,
@@ -518,6 +535,7 @@ CURLWARNING(Wcurl_easy_getinfo_err_curl_off_t,
 #define curlcheck_cb_data_option(option)                                \
   ((option) == CURLOPT_CHUNK_DATA ||                                    \
    (option) == CURLOPT_CLOSESOCKETDATA ||                               \
+   (option) == CURLOPT_CONN_REUSEDATA ||                                \
    (option) == CURLOPT_DEBUGDATA ||                                     \
    (option) == CURLOPT_FNMATCH_DATA ||                                  \
    (option) == CURLOPT_HEADERDATA ||                                    \
@@ -529,6 +547,7 @@ CURLWARNING(Wcurl_easy_getinfo_err_curl_off_t,
    (option) == CURLOPT_PREREQDATA ||                                    \
    (option) == CURLOPT_XFERINFODATA ||                                  \
    (option) == CURLOPT_READDATA ||                                      \
+   (option) == CURLOPT_RECVBUFFERDATA ||                                \
    (option) == CURLOPT_SEEKDATA ||                                      \
    (option) == CURLOPT_SOCKOPTDATA ||                                   \
    (option) == CURLOPT_SSH_KEYDATA ||                                   \
@@ -733,6 +752,14 @@ typedef size_t (*Wcurl_read_callback3)(char *, size_t, size_t, FILE *);
 typedef size_t (*Wcurl_read_callback4)(void *, size_t, size_t, void *);
 typedef size_t (*Wcurl_read_callback5)(void *, size_t, size_t, const void *);
 typedef size_t (*Wcurl_read_callback6)(void *, size_t, size_t, FILE *);
+
+#define curlcheck_recv_buffer_acquire_cb(expr)                          \
+  (curlcheck_NULL(expr) ||                                              \
+   curlcheck_cb_compatible((expr), curl_recv_buffer_acquire_callback))
+
+#define curlcheck_recv_buffer_release_cb(expr)                          \
+  (curlcheck_NULL(expr) ||                                              \
+   curlcheck_cb_compatible((expr), curl_recv_buffer_release_callback))
 
 /* evaluates to true if expr is of type curl_write_callback or "similar" */
 #define curlcheck_write_cb(expr)                                        \
@@ -955,6 +982,11 @@ typedef size_t (*Wcurl_interleave_callback2)(char *p, size_t s,
 #define curlcheck_prereq_cb(expr)                                       \
   (curlcheck_NULL(expr) ||                                              \
    curlcheck_cb_compatible((expr), curl_prereq_callback))
+
+/* evaluates to true if expr is of type curl_conn_reuse_callback */
+#define curlcheck_conn_reuse_cb(expr)                                   \
+  (curlcheck_NULL(expr) ||                                              \
+   curlcheck_cb_compatible((expr), curl_conn_reuse_callback))
 
 /* evaluates to true if expr is of type curl_trailer_callback */
 #define curlcheck_trailer_cb(expr)                                      \

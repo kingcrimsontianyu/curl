@@ -176,6 +176,16 @@ Only connect, nothing else. See CURLOPT_CONNECT_ONLY(3)
 
 Connect to a specific host and port. See CURLOPT_CONNECT_TO(3)
 
+## CURLOPT_CONN_REUSEDATA
+
+Data pointer to pass to the connection reuse callback. See
+CURLOPT_CONN_REUSEDATA(3)
+
+## CURLOPT_CONN_REUSEFUNCTION
+
+Decide whether to retire a connection after a successful transfer. See
+CURLOPT_CONN_REUSEFUNCTION(3)
+
 ## CURLOPT_CONV_FROM_NETWORK_FUNCTION
 
 **OBSOLETE** Callback for code base conversion.
@@ -930,6 +940,19 @@ Data pointer to pass to the read callback. See CURLOPT_READDATA(3)
 
 Callback for reading data. See CURLOPT_READFUNCTION(3)
 
+## CURLOPT_RECVBUFFERDATA
+
+User pointer for receive-buffer callbacks. See CURLOPT_RECVBUFFERDATA(3)
+
+## CURLOPT_RECVBUFFERFUNCTION
+
+Lend response receive buffers to libcurl. See CURLOPT_RECVBUFFERFUNCTION(3)
+
+## CURLOPT_RECVBUFFERRELEASEFUNCTION
+
+Receive-buffer ownership callback. See
+CURLOPT_RECVBUFFERRELEASEFUNCTION(3)
+
 ## CURLOPT_REDIR_PROTOCOLS
 
 **Deprecated option** Protocols to allow redirects to. See
@@ -1153,6 +1176,10 @@ Enable use of ALPN. See CURLOPT_SSL_ENABLE_ALPN(3)
 ## CURLOPT_SSL_FALSESTART
 
 **Deprecated option** Enable TLS False Start. See CURLOPT_SSL_FALSESTART(3)
+
+## CURLOPT_SSL_KTLS_DIRECT_RX
+
+Toggle strict direct TLS 1.3 RX kTLS. See CURLOPT_SSL_KTLS_DIRECT_RX(3)
 
 ## CURLOPT_SSL_OPTIONS
 

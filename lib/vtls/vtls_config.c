@@ -253,6 +253,7 @@ ssl_easy_config_compl_options(struct Curl_peer *origin,
    * CA settings exist. */
   primary->native_ca_store = !!(options & CURLSSLOPT_NATIVE_CA);
   primary->earlydata = !!(options & CURLSSLOPT_EARLYDATA);
+  primary->ktls_direct_rx = !!(options & CURLSSLOPT_KTLS_DIRECT_RX);
   primary->auto_client_cert =
     Curl_peer_equal(origin, initial_origin) &&
     !!(options & CURLSSLOPT_AUTO_CLIENT_CERT);

@@ -420,6 +420,8 @@ struct PureInfo {
   BIT(timecond);  /* set to TRUE if the time condition did not match, which
                      thus made the document NOT get fetched */
   BIT(used_proxy); /* the transfer used a proxy */
+  curl_ktls_direct_rx_status ktls_direct_rx_status;
+  /* per-transfer direct TLS 1.3 RX kTLS state */
 };
 
 struct pgrs_dir {
@@ -832,6 +834,9 @@ struct UserDefined {
   curl_write_callback fwrite_func;   /* function that stores the output */
   curl_write_callback fwrite_header; /* function that stores headers */
   curl_write_callback fwrite_rtp;    /* function that stores interleaved RTP */
+  curl_recv_buffer_acquire_callback recv_buffer_acquire;
+  curl_recv_buffer_release_callback recv_buffer_release;
+  void *recv_buffer_userdata;
   curl_read_callback fread_func_set; /* function that reads the input */
   curl_progress_callback fprogress; /* OLD and deprecated progress callback */
   curl_xferinfo_callback fxferinfo; /* progress callback */
@@ -848,6 +853,8 @@ struct UserDefined {
   void *closesocket_client;
   curl_prereq_callback fprereq; /* pre-initial request callback */
   void *prereq_userp; /* pre-initial request user data */
+  curl_conn_reuse_callback fconnreuse;
+  void *connreuse_userp;
 
   void *seek_client;    /* pointer to pass to the seek callback */
 #ifndef CURL_DISABLE_HSTS

@@ -51,6 +51,7 @@ void Curl_initinfo(struct Curl_easy *data)
   info->httpcode = 0;
   info->httpproxycode = 0;
   info->httpversion = 0;
+  info->ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_NONE;
   info->filetime = -1; /* -1 is an illegal time and thus means unknown */
   info->timecond = FALSE;
 
@@ -404,6 +405,9 @@ static CURLcode getinfo_long(struct Curl_easy *data, CURLINFO info,
       data->info.used_proxy
 #endif
       ;
+    break;
+  case CURLINFO_KTLS_DIRECT_RX_STATUS:
+    *param_longp = (long)data->info.ktls_direct_rx_status;
     break;
   default:
     return CURLE_UNKNOWN_OPTION;

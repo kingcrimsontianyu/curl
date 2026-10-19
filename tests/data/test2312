@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+HTTP
+CURLOPT_RECVBUFFERFUNCTION
+</keywords>
+</info>
+
+<reply>
+<data nocheck="yes">
+HTTP/1.1 200 OK
+Content-Length: 70000
+Content-Type: application/octet-stream
+
+%repeat[70000 x x]%
+</data>
+</reply>
+
+<client>
+<server>
+http
+</server>
+<name>
+application-owned receive buffers preserve in-place body spans
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER
+</command>
+</client>
+
+<verify>
+<protocol crlf="yes">
+GET /%TESTNUMBER HTTP/1.1
+Host: %HOSTIP:%HTTPPORT
+Accept: */*
+
+</protocol>
+</verify>
+</testcase>

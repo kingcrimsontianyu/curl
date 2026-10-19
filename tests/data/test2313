@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+HTTP
+CURLOPT_RECVBUFFERFUNCTION
+CURL_WRITEFUNC_PAUSE
+CURLPAUSE_RECV
+</keywords>
+</info>
+
+<reply>
+<data nocheck="yes">
+HTTP/1.1 200 OK
+Content-Length: 4
+
+data
+</data>
+</reply>
+
+<client>
+<server>
+http
+</server>
+<name>
+receive-buffer errors, starvation, resume, and pause rejection
+</name>
+<tool>
+lib%TESTNUMBER
+</tool>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER
+</command>
+</client>
+
+<verify>
+<protocol nocheck="yes">
+</protocol>
+</verify>
+</testcase>

@@ -658,6 +658,16 @@ static CURLcode setopt_long_bool(struct Curl_easy *data, CURLoption option,
     /* Update the current connection ssl_config. */
     Curl_ssl_conn_config_update(data, FALSE);
     break;
+#ifdef USE_SSL
+  case CURLOPT_SSL_KTLS_DIRECT_RX:
+    if(enabled)
+      s->ssl.ssl_options |=
+        (uint8_t)CURLSSLOPT_KTLS_DIRECT_RX;
+    else
+      s->ssl.ssl_options &=
+        (uint8_t)~CURLSSLOPT_KTLS_DIRECT_RX;
+    break;
+#endif
   case CURLOPT_CERTINFO:
 #ifdef USE_SSL
     if(Curl_ssl_supports(data, SSLSUPP_CERTINFO))
@@ -2303,6 +2313,9 @@ static CURLcode setopt_cptr_misc(struct Curl_easy *data, CURLoption option,
   case CURLOPT_READDATA:
     s->in_set = ptr;
     break;
+  case CURLOPT_RECVBUFFERDATA:
+    s->recv_buffer_userdata = ptr;
+    break;
   case CURLOPT_WRITEDATA:
     s->out = ptr;
     break;
@@ -2332,6 +2345,9 @@ static CURLcode setopt_cptr_misc(struct Curl_easy *data, CURLoption option,
     break;
   case CURLOPT_PREREQDATA:
     s->prereq_userp = ptr;
+    break;
+  case CURLOPT_CONN_REUSEDATA:
+    s->connreuse_userp = ptr;
     break;
   case CURLOPT_ERRORBUFFER:
     s->errorbuffer = ptr;
@@ -2584,6 +2600,14 @@ static CURLcode setopt_func(struct Curl_easy *data, CURLoption option,
 #pragma clang diagnostic pop
 #endif
     break;
+  case CURLOPT_RECVBUFFERFUNCTION:
+    s->recv_buffer_acquire =
+      va_arg(param, curl_recv_buffer_acquire_callback);
+    break;
+  case CURLOPT_RECVBUFFERRELEASEFUNCTION:
+    s->recv_buffer_release =
+      va_arg(param, curl_recv_buffer_release_callback);
+    break;
   case CURLOPT_READFUNCTION:
     /*
      * Read data callback
@@ -2708,6 +2732,9 @@ static CURLcode setopt_func(struct Curl_easy *data, CURLoption option,
 #endif
   case CURLOPT_PREREQFUNCTION:
     s->fprereq = va_arg(param, curl_prereq_callback);
+    break;
+  case CURLOPT_CONN_REUSEFUNCTION:
+    s->fconnreuse = va_arg(param, curl_conn_reuse_callback);
     break;
   default:
     return CURLE_UNKNOWN_OPTION;

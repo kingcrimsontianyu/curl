@@ -158,6 +158,11 @@ Last proxy CONNECT response code. See CURLINFO_HTTP_CONNECTCODE(3)
 
 The http version used in the connection. See CURLINFO_HTTP_VERSION(3)
 
+## CURLINFO_KTLS_DIRECT_RX_STATUS
+
+The strict direct TLS RX kTLS state for the transfer. See
+CURLINFO_KTLS_DIRECT_RX_STATUS(3)
+
 ## CURLINFO_LASTSOCKET
 
 (**Deprecated**) Last socket used. See CURLINFO_LASTSOCKET(3)

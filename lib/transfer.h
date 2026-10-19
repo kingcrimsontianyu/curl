@@ -25,6 +25,12 @@
  ***************************************************************************/
 #define Curl_headersep(x) ((((x) == ':') || ((x) == ';')))
 
+/* Exact link marker for builds containing the experimental caller-owned
+ * receive-buffer implementation. This is intentionally separate from the
+ * OpenSSL/Linux strict RX kTLS marker because buffer loans also work with
+ * cleartext and ordinary user-space TLS. */
+CURL_EXTERN unsigned int curl_recv_buffer_build_version_v1(void);
+
 char *Curl_checkheaders(const struct Curl_easy *data,
                         const char *thisheader,
                         const size_t thislen);

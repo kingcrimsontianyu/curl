@@ -289,6 +289,8 @@ static void t1521_geterr(const char *name, CURLcode result, int lineno)
 
 static curl_progress_callback progresscb;
 static curl_write_callback headercb;
+static curl_recv_buffer_acquire_callback recvbuffercb;
+static curl_recv_buffer_release_callback recvbufferreleasecb;
 static curl_debug_callback debugcb;
 static curl_trailer_callback trailercb;
 static curl_ssl_ctx_callback ssl_ctx_cb;
@@ -307,6 +309,7 @@ static curl_hstsread_callback hstsreadcb;
 static curl_hstswrite_callback hstswritecb;
 static curl_resolver_start_callback resolver_start_cb;
 static curl_prereq_callback prereqcb;
+static curl_conn_reuse_callback conn_reusecb;
 static curl_conv_callback conv_from_network_cb;
 static curl_conv_callback conv_to_network_cb;
 static curl_conv_callback conv_from_utf8_cb;

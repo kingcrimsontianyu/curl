@@ -589,6 +589,7 @@ CURLMcode curl_multi_add_handle(CURLM *m, CURL *curl)
 
 struct multi_done_ctx {
   BIT(premature);
+  BIT(retire);
 };
 
 static bool multi_conn_should_close(struct connectdata *conn,
@@ -597,7 +598,7 @@ static bool multi_conn_should_close(struct connectdata *conn,
 {
   /* if conn->bits.close is TRUE, it means that the connection should be
      closed in spite of everything else. */
-  if(conn->bits.close)
+  if(conn->bits.close || conn->bits.no_reuse)
     return TRUE;
 
   /* if data->set.reuse_forbid is TRUE, it means the libcurl client has
@@ -640,6 +641,10 @@ static cpool_do_result multi_done_locked(struct Curl_easy *data,
   struct multi_done_ctx *mdctx = userdata;
 
   (void)pnow;
+  /* Stop new users without interrupting existing multiplexed transfers. */
+  if(mdctx->retire)
+    conn->bits.no_reuse = TRUE;
+
   CURL_TRC_M(data, "multi_done_locked, in use=%u", conn->attached_xfers);
   if(CONN_INUSE(conn)) {
     /* Stop if still used. */
@@ -739,11 +744,26 @@ static CURLcode multi_done(struct Curl_easy *data,
     /* Inform connection filters that this transfer is done and they
      * need to give up any references to `data`. */
     Curl_conn_ev_data_done(data, premature);
-    Curl_detach_connection(data);
-    Curl_dnscache_prune(data, pnow);
 
     memset(&mdctx, 0, sizeof(mdctx));
     mdctx.premature = premature;
+
+    /* Call outside the pool lock, while the socket is still attached. The
+     * decision only affects reuse; it cannot fail or replay this transfer. */
+    if(!result && !premature && !data->set.connect_only &&
+       !conn->bits.close && !conn->bits.no_reuse &&
+       conn->sock[FIRSTSOCKET] != CURL_SOCKET_BAD && data->set.fconnreuse) {
+      struct Curl_mapi_guard guard;
+      int decision;
+      CURL_CBAPI_START(&guard, data, easy_connreuse);
+      decision = data->set.fconnreuse(data, conn->sock[FIRSTSOCKET],
+                                     data->set.connreuse_userp);
+      CURL_CBAPI_END(&guard);
+      mdctx.retire = (decision == CURL_CONN_REUSE_RETIRE);
+    }
+
+    Curl_detach_connection(data);
+    Curl_dnscache_prune(data, pnow);
     Curl_cpool_return(data, conn, multi_done_locked, &mdctx, pnow);
 
     if(data->multi)

@@ -4016,6 +4016,7 @@ AC_CHECK_HEADERS(
   netinet/in6.h \
   sys/un.h \
   linux/tcp.h \
+  linux/tls.h \
   netinet/tcp.h \
   netinet/udp.h \
   netinet/ip.h \

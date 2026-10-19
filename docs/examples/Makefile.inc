@@ -92,6 +92,7 @@ check_PROGRAMS = \
   interface \
   ipv6 \
   keepalive \
+  ktls-direct-rx \
   limit-rate \
   localport \
   log_failed_transfers \

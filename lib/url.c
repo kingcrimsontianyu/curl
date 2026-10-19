@@ -2505,6 +2505,14 @@ CURLcode Curl_connect(struct Curl_easy *data, bool *pconnected)
     goto out;
   }
 
+  if((data->set.ssl.ssl_options & CURLSSLOPT_KTLS_DIRECT_RX) &&
+     !(conn->scheme->flags & PROTOPT_SSL)) {
+    failf(data, "direct RX kTLS requires origin TLS");
+    data->info.ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_UNAVAILABLE;
+    result = CURLE_NOT_BUILT_IN;
+    goto out;
+  }
+
   if(conn->bits.reuse) {
     if(conn->attached_xfers > 1)
       /* multiplexed */

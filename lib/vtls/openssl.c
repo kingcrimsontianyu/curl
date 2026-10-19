@@ -664,15 +664,22 @@ static void ossl_bio_cf_method_free(BIO_METHOD *m)
     BIO_meth_free(m);
 }
 
-#ifndef HAVE_KEYLOG_UPSTREAM
 #ifdef HAVE_KEYLOG_CALLBACK
+static int ossl_keylog_ex_index = -1;
+
 static void ossl_keylog_callback(const SSL *ssl, const char *line)
 {
-  (void)ssl;
+  struct ossl_ctx *octx = ossl_keylog_ex_index >= 0 ?
+    (struct ossl_ctx *)SSL_get_ex_data(ssl, ossl_keylog_ex_index) : NULL;
 
-  Curl_tls_keylog_write_line(line);
+  Curl_ossl_ktls_keylog(octx, line);
+  if(Curl_tls_keylog_enabled())
+    Curl_tls_keylog_write_line(line);
+  if(octx && octx->ktls_rx.prior_keylog_cb &&
+     octx->ktls_rx.prior_keylog_cb != ossl_keylog_callback)
+    octx->ktls_rx.prior_keylog_cb(ssl, line);
 }
-#else
+#elif !defined(HAVE_KEYLOG_UPSTREAM)
 /*
  * ossl_log_tls12_secret is called by libcurl to make the CLIENT_RANDOMs if the
  * OpenSSL being used does not have native support for doing that.
@@ -711,7 +718,6 @@ static void ossl_log_tls12_secret(const SSL *ssl, bool *keylog_done)
                         master_key, master_key_length);
 }
 #endif /* !HAVE_KEYLOG_CALLBACK */
-#endif /* HAVE_KEYLOG_UPSTREAM */
 
 static const char *SSL_ERROR_to_str(int err)
 {
@@ -1641,6 +1647,14 @@ static int ossl_init(void)
     0;
   OPENSSL_init_ssl(flags, NULL);
 
+#ifdef HAVE_KEYLOG_CALLBACK
+  if(ossl_keylog_ex_index < 0) {
+    ossl_keylog_ex_index = SSL_get_ex_new_index(0, NULL, NULL, NULL, NULL);
+    if(ossl_keylog_ex_index < 0)
+      return 0;
+  }
+#endif
+
 #ifndef HAVE_KEYLOG_UPSTREAM
   Curl_tls_keylog_open();
 #endif
@@ -1867,6 +1881,12 @@ static CURLcode ossl_shutdown(struct Curl_cfilter *cf,
     goto out;
   }
 
+  if(octx->ktls_rx.active) {
+    result = Curl_ossl_ktls_rx_shutdown(cf, data, octx,
+                                        send_shutdown, done);
+    goto out;
+  }
+
   connssl->io_need = CURL_SSL_IO_NEED_NONE;
   *done = FALSE;
   if(!(SSL_get_shutdown(octx->ssl) & SSL_SENT_SHUTDOWN)) {
@@ -1975,6 +1995,8 @@ out:
 void Curl_osslctx_cleanup(struct ossl_ctx *octx)
 {
   DEBUGASSERT(octx);
+
+  Curl_ossl_ktls_rx_cleanup(&octx->ktls_rx);
   if(octx->ssl) {
     SSL_free(octx->ssl);
     octx->ssl = NULL;
@@ -3469,7 +3491,8 @@ static CURLcode ossl_init_session_and_alpns(
   const struct alpn_spec *alpns_requested,
   Curl_ossl_init_session_reuse_cb *sess_reuse_cb)
 {
-  struct ssl_filter_config *conn_cfg = Curl_ssl_cf_get_filter_config(cf);
+  struct ssl_filter_config *ssl_config = Curl_ssl_cf_get_filter_config(cf);
+  struct ssl_filter_config *conn_cfg = ssl_config;
   struct alpn_spec alpns;
   CURLcode result;
 
@@ -3477,7 +3500,9 @@ static CURLcode ossl_init_session_and_alpns(
 
   octx->reused_session = FALSE;
 
-  if((cf->sockindex == SECONDARYSOCKET) && !(cf->cft->flags & CF_TYPE_PROXY)) {
+  if(!ssl_config->ktls_direct_rx &&
+     (cf->sockindex == SECONDARYSOCKET) &&
+     !(cf->cft->flags & CF_TYPE_PROXY)) {
     /* FTP is a bitch. On TLS secured transfers, it is a common server
      * option to require the client to use the SAME TLS session as on
      * the control connection or it fails the request. See #22225. */
@@ -3489,7 +3514,7 @@ static CURLcode ossl_init_session_and_alpns(
     }
   }
 
-  if(!octx->reused_session &&
+  if(!ssl_config->ktls_direct_rx && !octx->reused_session &&
      Curl_ssl_scache_use(cf, data) && !conn_cfg->verifystatus) {
     struct Curl_ssl_session *scs = NULL;
 
@@ -3657,6 +3682,18 @@ static CURLcode ossl_init_ssl(struct ossl_ctx *octx,
     return CURLE_OUT_OF_MEMORY;
   }
 
+#ifdef HAVE_KEYLOG_CALLBACK
+  {
+    struct ssl_filter_config *ssl_config = Curl_ssl_cf_get_filter_config(cf);
+    if((Curl_tls_keylog_enabled() || ssl_config->ktls_direct_rx) &&
+       (ossl_keylog_ex_index < 0 ||
+        SSL_set_ex_data(octx->ssl, ossl_keylog_ex_index, octx) != 1)) {
+      failf(data, "SSL: could not attach keylog callback state");
+      return CURLE_OUT_OF_MEMORY;
+    }
+  }
+#endif
+
   SSL_set_app_data(octx->ssl, ssl_user_data);
 
 #ifndef OPENSSL_NO_OCSP
@@ -3760,6 +3797,14 @@ CURLcode Curl_ossl_ctx_init(struct ossl_ctx *octx,
   const char * const ssl_cert_type = conn_config->cert_type;
   unsigned int ssl_version_min = CURL_SSLVERSION_DEFAULT;
   char error_buffer[256];
+
+  if(conn_config->ktls_direct_rx && peer->transport != TRNSPRT_TCP) {
+    data->info.ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_UNAVAILABLE;
+    failf(data, "direct RX kTLS requires TCP and does not support QUIC");
+    return CURLE_NOT_BUILT_IN;
+  }
+
+  Curl_ossl_ktls_rx_init(&octx->ktls_rx);
 
   /* Make funny stuff to get random input */
   result = ossl_seed(data);
@@ -3980,12 +4025,12 @@ CURLcode Curl_ossl_ctx_init(struct ossl_ctx *octx,
 
   /* Enable logging of secrets to the file specified in env SSLKEYLOGFILE. */
 #if !defined(HAVE_KEYLOG_UPSTREAM) && defined(HAVE_KEYLOG_CALLBACK)
-  if(Curl_tls_keylog_enabled()) {
+  if(Curl_tls_keylog_enabled() && !conn_config->ktls_direct_rx) {
     SSL_CTX_set_keylog_callback(octx->ssl_ctx, ossl_keylog_callback);
   }
 #endif
 
-  if(cb_new_session) {
+  if(cb_new_session && !conn_config->ktls_direct_rx) {
     /* Enable the session cache because it is a prerequisite for the
      * "new session" callback. Use the "external storage" mode to prevent
      * OpenSSL from creating an internal session cache.
@@ -4018,8 +4063,27 @@ CURLcode Curl_ossl_ctx_init(struct ossl_ctx *octx,
     }
   }
 
+  result = Curl_ossl_ktls_rx_prepare(cf, data, octx);
+  if(result)
+    return result;
+
+#if defined(HAVE_KEYLOG_CALLBACK) && defined(CURL_OSSL_KTLS_DIRECT_RX)
+  /* A user SSL_CTX callback may replace the keylog callback. Direct RX kTLS
+   * requires its in-memory traffic-secret capture, so chain any application
+   * callback and install the combined callback last. SSLKEYLOGFILE output,
+   * when requested, is preserved. */
+  if(conn_config->ktls_direct_rx) {
+    void (*prior)(const SSL *, const char *) =
+      SSL_CTX_get_keylog_callback(octx->ssl_ctx);
+    octx->ktls_rx.prior_keylog_cb =
+      prior != ossl_keylog_callback ? prior : NULL;
+    SSL_CTX_set_keylog_callback(octx->ssl_ctx, ossl_keylog_callback);
+  }
+#endif
+
   return ossl_init_ssl(octx, cf, data, peer, alpns_requested,
-                       ssl_user_data, sess_reuse_cb);
+                       ssl_user_data,
+                       conn_config->ktls_direct_rx ? NULL : sess_reuse_cb);
 }
 
 static CURLcode ossl_on_session_reuse(struct Curl_cfilter *cf,
@@ -4932,6 +4996,8 @@ static CURLcode ossl_connect_step3(struct Curl_cfilter *cf,
   if(result)
     /* on error, remove sessions we might have in the pool */
     Curl_ssl_scache_remove_all(cf, data, connssl->peer.scache_key);
+  else
+    result = Curl_ossl_ktls_rx_activate(cf, data, octx);
 
   return result;
 }
@@ -5024,6 +5090,9 @@ static CURLcode ossl_connect(struct Curl_cfilter *cf,
 
   /* check if the connection has already been established */
   if(ssl_connection_complete == connssl->state) {
+    struct ossl_ctx *octx = (struct ossl_ctx *)connssl->backend;
+    if(octx && octx->ktls_rx.active)
+      data->info.ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_ACTIVE;
     *done = TRUE;
     return CURLE_OK;
   }
@@ -5102,7 +5171,10 @@ static bool ossl_data_pending(struct Curl_cfilter *cf,
                               const struct Curl_easy *data)
 {
   struct ssl_connect_data *connssl = cf->ctx;
+  struct ossl_ctx *octx = (struct ossl_ctx *)connssl->backend;
   (void)data;
+  if(octx->ktls_rx.active)
+    return FALSE;
   return (bool)connssl->input_pending;
 }
 
@@ -5155,6 +5227,13 @@ static CURLcode ossl_send(struct Curl_cfilter *cf,
 
     switch(err) {
     case SSL_ERROR_WANT_READ:
+      if(octx->ktls_rx.active) {
+        failf(data, OSSL_PACKAGE " SSL_write unexpectedly requires a read "
+              "after direct RX kTLS handoff");
+        connclose(cf->conn);
+        result = CURLE_SEND_ERROR;
+        goto out;
+      }
       connssl->io_need = CURL_SSL_IO_NEED_RECV;
       octx->blocked_ssl_write_len = memlen;
       result = CURLE_AGAIN;
@@ -5224,6 +5303,17 @@ static CURLcode ossl_recv(struct Curl_cfilter *cf,
   DEBUGASSERT(octx);
 
   *pnread = 0;
+
+  if(octx->ktls_rx.active) {
+    CURLcode ktls_result;
+    ssize_t ktls_nread = Curl_ossl_ktls_rx_recv(
+      cf, data, octx, buf, buffersize, &ktls_result);
+    if(ktls_nread > 0)
+      *pnread = (size_t)ktls_nread;
+    result = ktls_result;
+    goto out;
+  }
+
   ERR_clear_error();
 
   connssl->io_need = CURL_SSL_IO_NEED_NONE;
@@ -5580,6 +5670,9 @@ const struct Curl_ssl Curl_ssl_openssl = {
 #endif
   SSLSUPP_CA_CACHE |
   SSLSUPP_HTTPS_PROXY |
+#ifdef CURL_OSSL_KTLS_DIRECT_RX
+  SSLSUPP_KTLS_DIRECT_RX |
+#endif
   SSLSUPP_CIPHER_LIST |
   SSLSUPP_ISSUERCERT |
   SSLSUPP_ISSUERCERT_BLOB |

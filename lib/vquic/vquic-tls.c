@@ -81,6 +81,12 @@ CURLcode Curl_vquic_tls_init(struct curl_tls_ctx *ctx,
                              void *cb_user_data, void *ssl_user_data,
                              Curl_vquic_session_reuse_cb *session_reuse_cb)
 {
+  if(data->set.ssl.ssl_options & CURLSSLOPT_KTLS_DIRECT_RX) {
+    data->info.ktls_direct_rx_status = CURL_KTLS_DIRECT_RX_UNAVAILABLE;
+    failf(data, "direct RX kTLS requires TCP and does not support QUIC");
+    return CURLE_NOT_BUILT_IN;
+  }
+
 #ifdef USE_OPENSSL
   return Curl_ossl_ctx_init(&ctx->ossl, cf, data, ssl_peer, alpns,
                             cb_setup, cb_user_data, NULL, ssl_user_data,

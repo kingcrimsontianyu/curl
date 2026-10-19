@@ -287,6 +287,37 @@ typedef size_t (*curl_write_callback)(char *buffer,
                                       size_t nitems,
                                       void *outstream);
 
+/*
+ * Experimental receive-buffer loan API.
+ *
+ * The application can lend libcurl a buffer for one or more response reads.
+ * Body pointers passed to the write callback can point into this buffer. The
+ * release callback marks the point after which libcurl no longer references
+ * the buffer; it does not require the application to make the buffer
+ * immediately reusable.
+ */
+#define CURL_HAS_RECV_BUFFER_CALLBACKS 1
+
+struct curl_recv_buffer {
+  void *buffer;
+  size_t length;
+  void *token;
+};
+
+typedef enum {
+  CURL_RECV_BUFFER_OK = 0,
+  CURL_RECV_BUFFER_AGAIN = 1,
+  CURL_RECV_BUFFER_ERROR = 2
+} curl_recv_buffer_result;
+
+typedef curl_recv_buffer_result (*curl_recv_buffer_acquire_callback)(
+  CURL *easy, size_t suggested_size, struct curl_recv_buffer *buffer,
+  void *userdata);
+
+typedef void (*curl_recv_buffer_release_callback)(
+  CURL *easy, const struct curl_recv_buffer *buffer, size_t used,
+  void *userdata);
+
 /* This callback is called when a new resolver request is made */
 typedef int (*curl_resolver_start_callback)(void *resolver_state,
                                             void *reserved, void *userdata);
@@ -509,6 +540,12 @@ typedef int (*curl_prereq_callback)(void *clientp,
 /* Return code for when the pre-request callback wants to abort the
    request */
 #define CURL_PREREQFUNC_ABORT 1
+
+/* Decide whether a completed transfer's connection may be reused. */
+typedef int (*curl_conn_reuse_callback)(CURL *handle, curl_socket_t socket,
+                                       void *clientp);
+#define CURL_CONN_REUSE_KEEP 0
+#define CURL_CONN_REUSE_RETIRE 1
 
 /* All possible error codes from all sorts of curl functions. Future versions
    may return other values, stay prepared.
@@ -972,6 +1009,26 @@ typedef enum {
 
 /* If possible, send data using TLS 1.3 early data */
 #define CURLSSLOPT_EARLYDATA (1L << 6)
+
+/* Require Linux TLS 1.3 RX kTLS and request opportunistic direct placement of
+ * authenticated plaintext in libcurl's caller-provided receive buffer. This
+ * is currently supported by the OpenSSL backend on Linux only. Unlike
+ * best-effort TLS options, activation failures are returned to the caller. */
+#define CURLSSLOPT_KTLS_DIRECT_RX (1L << 7)
+
+/* This fork exposes the strict direct RX kTLS option and status API. Runtime
+ * support still depends on Linux, OpenSSL 3.x, TLS 1.3, and kernel kTLS. */
+#define CURL_HAS_KTLS_DIRECT_RX 1
+
+/* Per-transfer state for strict direct TLS 1.3 RX kTLS. The UNAVAILABLE state
+ * is reserved for capability rejections before application data handoff,
+ * where a caller may safely retry on a fresh connection without direct RX. */
+typedef enum {
+  CURL_KTLS_DIRECT_RX_NONE = 0,
+  CURL_KTLS_DIRECT_RX_REQUESTED,
+  CURL_KTLS_DIRECT_RX_ACTIVE,
+  CURL_KTLS_DIRECT_RX_UNAVAILABLE
+} curl_ktls_direct_rx_status;
 
 /* The default connection attempt delay in milliseconds for happy eyeballs.
    CURLOPT_HAPPY_EYEBALLS_TIMEOUT_MS.3 and happy-eyeballs-timeout-ms.d document
@@ -2288,6 +2345,22 @@ typedef enum {
   /* Space-separated list of components to sign for HTTP Message Signatures */
   CURLOPT(CURLOPT_HTTPSIG_HEADERS, CURLOPTTYPE_STRINGPOINT, 332),
 
+  /* EXPERIMENTAL: acquire an application-owned response receive buffer */
+  CURLOPT(CURLOPT_RECVBUFFERFUNCTION, CURLOPTTYPE_FUNCTIONPOINT, 333),
+
+  /* EXPERIMENTAL: release an application-owned response receive buffer */
+  CURLOPT(CURLOPT_RECVBUFFERRELEASEFUNCTION, CURLOPTTYPE_FUNCTIONPOINT, 334),
+
+  /* user data for the receive buffer callbacks */
+  CURLOPT(CURLOPT_RECVBUFFERDATA, CURLOPTTYPE_CBPOINT, 335),
+
+  /* toggle strict direct TLS 1.3 RX kTLS without replacing SSL options */
+  CURLOPT(CURLOPT_SSL_KTLS_DIRECT_RX, CURLOPTTYPE_LONG, 336),
+
+  /* EXPERIMENTAL: decide connection reuse after a successful transfer */
+  CURLOPT(CURLOPT_CONN_REUSEFUNCTION, CURLOPTTYPE_FUNCTIONPOINT, 337),
+  CURLOPT(CURLOPT_CONN_REUSEDATA, CURLOPTTYPE_CBPOINT, 338),
+
   CURLOPT_LASTENTRY /* the last unused */
 } CURLoption;
 
@@ -3022,7 +3095,8 @@ typedef enum {
   CURLINFO_HTTPAUTH_USED    = CURLINFO_LONG + 69,
   CURLINFO_PROXYAUTH_USED   = CURLINFO_LONG + 70,
   CURLINFO_SIZE_DELIVERED   = CURLINFO_OFF_T + 71,
-  CURLINFO_LASTONE          = 71
+  CURLINFO_KTLS_DIRECT_RX_STATUS = CURLINFO_LONG + 72,
+  CURLINFO_LASTONE          = 72
 } CURLINFO;
 
 /* CURLINFO_RESPONSE_CODE is the new name for the option previously known as
